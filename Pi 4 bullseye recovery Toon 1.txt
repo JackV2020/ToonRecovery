@@ -1,0 +1,414 @@
+I had a rooted Toon 1 which after power on suddenly only showed the living room.
+No progress bar at all. Also not after power off power on. Issue stayed there.....
+
+To recover I followed the instructions at https://github.com/IgorYbema/ToonRecovery as much as possible.
+
+I used a Raspberry Pi 4 and bullseye which is probably the cause why I had to do some things different than in the instructions.
+
+Below I describe exactly what I did from downloading bullseye until the successful recovery.
+
+
+I visited https://www.raspberrypi.com/software/ where you can download software.
+
+It is possible to download and use the "Raspberry Pi Imager" to create a uSD card with bullseye on it.
+
+You can also download an image and install it manually.
+
+Anyway, I put bullseye on a 32 GB uSD card and from previous installations I knew I had to make some changes to config.txt before putting it in my Pi.
+
+( Detailed info on config.txt is available on https://www.raspberrypi.com/documentation/ )
+
+/boot/config.txt :
+to have output on HDMI I have to
+    change dtoverlay=vc4-kms-v3d -- > dtoverlay=vc4-fkms-v3d
+to force hdmi screen for vnc
+    hdmi_force_hotplug=1
+to force the mode I need :
+    hdmi_group=2
+    hdmi_mode=69
+
+After this I put put the uSD card in the Pi, connected my screen, keyboard, mouse Ethernet and booted.
+I followed the basic startup settings concerning country, language, keyboard, skipped WiFi, let it update and rebooted.
+
+Screen was scrolling like every time I do this so
+Start > Preferences > Screen Configuration > Configure > Screens > Resolution > 1920x1080
+
+A requirement is that you enable the serial port without console login possibility.
+You need to configure that in raspi-config.
+Something I like but what you do not need to use is vnc.
+You do not need to use vnc but I like it because I can make screenshots, copy paste text etc.
+
+sudo raspi-config
+    vnc display resolution for headless use 1920x1080
+    Enabled vnc
+    Enabled serial without console output
+
+Check if I can see the serial port :
+    ls -l /dev/ttyS0
+    crw-rw---- 1 root dialout 4, 64 Aug 26 13:22 /dev/ttyS0
+
+I use a Pi which I normally use for Nextcloud, Domoticz and other things and I decided to give it the same address and name.
+
+I put a static IP in /etc/dhcpcd.conf :
+    interface eth0
+    static ip_address=192.168.2.4/24
+    static routers=192.168.2.254
+    static domain_name_servers=192.168.2.254
+
+changed /etc/hostname :
+    pi41.home
+
+sudo geany /etc/hosts :
+    127.0.0.1    localhost
+    ::1        localhost ip6-localhost ip6-loopback
+    ff02::1        ip6-allnodes
+    ff02::2        ip6-allrouters
+
+    127.0.1.1    pi41
+    192.168.2.4     pi41.home
+
+
+I shut down Pi, removed screen, keyboard and mouse, booted and connected by vnc.
+
+
+Later we need a terminal emulator which can use a serial connection like /dev/ttyS0 so I installed putty :
+
+pi@pi41:~ $ sudo apt install putty -y
+
+Started putty and it "sees" /dev/ttyS0 when I select serial.
+Closed putty.
+
+Now following the Recovery repository :
+
+pi@pi41:~ $ mkdir -p /srv/nfs
+mkdir: cannot create directory '/srv/nfs': Permission denied
+
+Of course not so :
+pi@pi41:~ $ sudo -i
+
+root@pi41:~# mkdir -p /srv/nfs
+root@pi41:~# cd /srv/nfs
+root@pi41:~# curl -Nks "http://qutility.nl/toon-recovery-nfs-server-image.tar.gz" | tar zxvf -
+
+root@pi41:~# cat /proc/fs/nfsd/versions
+No output because there is no nfs server
+
+root@pi41:~#  apt install nfs-kernel-server
+
+root@pi41:~#  cat /proc/fs/nfsd/versions
+-2 +3 +4 +4.1 +4.2
+
+No version 2 support so I edit  /etc/default/nfs-kernel-server
+change :
+    RPCNFSDCOUNT=8
+to :
+    RPCNFSDCOUNT="8 -V 2"
+root@pi41:~#  systemctl restart nfs-kernel-server.service
+root@pi41:~#  cat /proc/fs/nfsd/versions
++2 +3 +4 +4.1 +4.2
+
+NFS version 2 is there.
+
+I added the next line to the end of /etc/exports
+/srv/nfs *(rw,no_subtree_check,async,no_root_squash)
+
+Just to make sure to have it activated :
+root@pi41:~# systemctl restart nfs-kernel-server.service
+No errors.
+
+One of the requirements is python 2.7
+
+Check python version :
+root@pi41:~# python -V
+Python 3.9.2
+
+I could not find python2.7 on my Pi so I installed it :
+root@pi41:~# apt install python
+root@pi41:~# curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+root@pi41:~# python2 get-pip.py
+
+root@pi41:~# pip --version
+pip 20.3.4 from /usr/local/lib/python2.7/dist-packages/pip (python 2.7)
+root@pi41:~# python -V
+Python 2.7.18
+root@pi41:~#
+
+( I checked the same for the account pi and that gives the same so the default python version is 2.7 now. )
+
+We are going to use sudo to run the tool so the next I did with the pi account :
+pi@pi41:~ $ git clone --recursive git://git.code.sf.net/p/openocd/code openocd
+pi@pi41:~ $ cd openocd
+pi@pi41:~ $ sudo apt install make libtool libtool-bin pkg-config autoconf automake texinfo libusb-1.0 libusb-dev
+I got an error because it was not possible to install libusb-1.0
+So without libusb-1.0
+pi@pi41:~ $ sudo apt install make libtool libtool-bin pkg-config autoconf automake texinfo libusb-dev
+
+See what we can do about libusb-1.0
+pi@pi41:~ sudo apt-cache search libusb | grep ^libusb-
+libusb-0.1-4 - userspace USB programming library
+libusb-dev - userspace USB programming library development files
+libusb-1.0-0 - userspace USB programming library
+libusb-1.0-0-dev - userspace USB programming library development files
+libusb-1.0-doc - documentation for userspace USB programming
+libusb-java - Java wrapper for libusb
+libusb-java-doc - Java wrapper for libusb (documentation)
+libusb-java-lib - Java wrapper for libusb (native library)
+libusb-libusb-perl - Perl interface to the libusb-1.0 API
+libusb-ocaml - OCaml bindings to libusb-1.0 (runtime)
+libusb-ocaml-dev - OCaml bindings to libusb-1.0
+
+I saw 2 versions and the version libusb-1.0-0 looks the most like libusb-1.0
+
+So
+
+pi@pi41:~ sudo apt-get install libusb-1.0-0
+and received a message : libusb-1.0-0 is already the newest version (2:1.0.24-3).
+
+Now 2 actions which require some coffee or thee :
+
+pi@pi41:~ $ {
+./bootstrap &&\
+./configure --enable-sysfsgpio\
+     --enable-bcm2835gpio \
+     --prefix=/usr\
+&&\
+make -j4
+} 2>&1 | tee openocd_build.log
+wait...wait...
+
+pi@pi41:~ $ sudo make install
+wait...wait...
+
+Next requirement is python-serial
+pi@pi41:~ $ sudo apt install python-serial
+I got a message explaining that it is not available.
+
+Google how to install python-serial and I found the next solution
+pi@pi41:~ $ sudo pip2 install pyserial
+
+( In the end this turned out to be ok since the recovery script ran without error. )
+
+
+pi@pi41:~ git clone https://github.com/ToonSoftwareCollective/ToonRecovery.git
+pi@pi41:~ cd ToonRecovery
+
+I always like to look around  so
+pi@pi41:~ ls
+
+After some looking around I shut down the pi and connected Toon 1 as described in the recovery repository.
+
+Toon        Pi
+Pin#        Pin# (not GPIO but Pin#)
+ 1  RTCK    --
+ 2  TRST    24
+ 3  GND     25
+ 4  TCK     23
+ 5  GND     20
+ 6  TMS     22
+ 7  SRST    18
+ 8  TDI     19
+ 9  Vt      --
+10  TDO     21
+11  RxD      8
+12  --      --
+13  TxD     10
+14  GND      9
+
+After I made all connections I checked the wiring by looking at it and writing down what I had checked.
+
+My list was the same as the one in the repository so all 11 cables were in the right positions.
+
+After startup :
+
+pi@pi41:~ $ cd ToonRecovery/
+pi@pi41:~/ToonRecovery $ sudo python . --jtag-available
+INFO:__main__:Starting up...
+CRITICAL:__main__:Cannot autodetect jtag hardware
+
+I found things on the internet : https://www.domoticaforum.eu/viewtopic.php?f=101&t=11999&start=345
+
+Found a piece of text there : 'the revision number 2a02082 (normal pi3-b is a02082).'
+So I searched for that number a02082
+
+pi@pi41:~/ToonRecovery $ grep -rin . -e a02082
+./__main__.py:103:            "a02082":   "rpi3",
+
+I edited the file and saw a section for pi4 so I found my revision number :
+
+pi@pi41:~/ToonRecovery $ grep /proc/cpuinfo -e Revision
+Revision    : c03112
+
+And added that to ./__main__.py in the 'pi4 section' just after the revision number c03111 which is 1 lower
+
+Also learned there was a DEBUG option and decided to use that.
+
+pi@pi41:~/ToonRecovery $ sudo python . --jtag-available --output-level DEBUG
+INFO:__main__:Starting up...
+INFO:__main__:Detected JTAG hardware 'rpi4'
+INFO:__main__:Setting server ip to 192.168.2.4
+DEBUG:__main__:{"jtag_hardware": "rpi4", "gatewayip": null, "serverip": "192.168.2.4", "has_jtag": true, "check_uboot": true, "boot_only": false, "port": "/dev/serial0"}
+INFO:recovery:Waiting for Toon to restart
+
+( This is where I restarted my Toon 1 by pressing the button on the bottom of the pcb )
+
+^[[23~^[[23~INFO:recovery:Toon has U-Boot version 2010.09-R8
+INFO:recovery:Using password to log in
+INFO:recovery:Logging in to U-Boot
+DEBUG:recovery:
+CPU:   Freescale i.MX27 at 400.168 MHz
+
+Prodrive B.V. ED2.0
+DRAM:  128 MiB
+NAND:  128 MiB
+LCD: Initializing LCD frambuffer at a1400000
+LCD: 800x480, pbb 4
+LCD: Drawing the logo...
+In:    serial
+Out:   serial
+Err:   serial
+Display-bmp: 800 x 480  with 16777216 colors
+Net:   FEC
+Warning: FEC MAC addresses don't match:
+Address in SROM is         00:00:20:03:00:00
+Address in environment is  00:0f:11:03:f5:83
+
+
+Enter password - autoboot in 2 sec...
+U-Boot>
+DEBUG:recovery:Logged in to U-Boot
+INFO:recovery:Patching U-Boot
+INFO:recovery:Requesting network details using DHCP...
+DEBUG:recovery:dhcp
+BOOTP broadcast 1
+BOOTP broadcast 2
+BOOTP broadcast 3
+BOOTP broadcast 4
+BOOTP broadcast 5
+
+Retry count exceeded; starting again
+BOOTP broadcast 1
+BOOTP broadcast 2
+BOOTP broadcast 3
+BOOTP broadcast 4
+BOOTP broadcast 5
+*** Unhandled DHCP Option in OFFER/ACK: 28
+*** Unhandled DHCP Option in OFFER/ACK: 125
+*** Unhandled DHCP Option in OFFER/ACK: 28
+*** Unhandled DHCP Option in OFFER/ACK: 125
+DHCP client bound to address 192.168.2.25
+U-Boot>
+DEBUG:recovery: printenv
+bootdelay=2
+baudrate=115200
+loadaddr=0xA1000000
+bootdelay=2
+mtdids=nand0=mxc_nand
+mtdparts=mtdparts=mxc_nand:1M(u-boot)ro,512K(u-boot-env)ro,1536K(splash-image),3M(kernel),3M(kernel-backup),119M(rootfs)
+mtdparts_kernel=mtdparts=mxc_nand:512K@0x00100000(u-boot-env)ro,1536K(splash-image),3M(kernel),3M(kernel-backup),119M(rootfs)
+mem=128M
+autoload=no
+backlight_brightness=50
+baudrate=115200
+console=ttymxc0
+addtty=setenv bootargs ${bootargs} console=${console},${baudrate}
+addmtd=setenv bootargs ${bootargs} ${mtdparts_kernel}
+nandargs=setenv bootargs ubi.mtd=4 root=ubi0:rootfs rw rootfstype=ubifs
+boot_nand=run nandargs addmtd addtty addmisc; nand read ${loadaddr} kernel; bootm ${loadaddr}
+boot_nand_backup=run nandargs addmtd addtty addmisc; nand read ${loadaddr} kernel-backup; bootm ${loadaddr}
+bootcmd=run boot_nand
+splashimage=0x180000
+ethact=FEC
+sn=14-52-005-532
+pn=6500-1400-2001
+software_compatibility=0
+manufacture_date=2015/01
+ethaddr=00:0F:11:03:F5:83
+addmisc=setenv bootargs ${bootargs} mem=${mem} lpj=999424
+gatewayip=192.168.2.254
+netmask=255.255.255.0
+ipaddr=192.168.2.25
+dnsip=195.121.1.34
+
+Environment size: 1108/131068 bytes
+U-Boot>
+DEBUG:recovery:printenv
+DEBUG:recovery:bootdelay=2
+DEBUG:recovery:baudrate=115200
+DEBUG:recovery:loadaddr=0xA1000000
+DEBUG:recovery:bootdelay=2
+DEBUG:recovery:mtdids=nand0=mxc_nand
+DEBUG:recovery:mtdparts=mtdparts=mxc_nand:1M(u-boot)ro,512K(u-boot-env)ro,1536K(splash-image),3M(kernel),3M(kernel-backup),119M(rootfs)
+DEBUG:recovery:mtdparts_kernel=mtdparts=mxc_nand:512K@0x00100000(u-boot-env)ro,1536K(splash-image),3M(kernel),3M(kernel-backup),119M(rootfs)
+DEBUG:recovery:mem=128M
+DEBUG:recovery:autoload=no
+DEBUG:recovery:backlight_brightness=50
+DEBUG:recovery:baudrate=115200
+DEBUG:recovery:console=ttymxc0
+DEBUG:recovery:addtty=setenv bootargs ${bootargs} console=${console},${baudrate}
+DEBUG:recovery:addmtd=setenv bootargs ${bootargs} ${mtdparts_kernel}
+DEBUG:recovery:nandargs=setenv bootargs ubi.mtd=4 root=ubi0:rootfs rw rootfstype=ubifs
+DEBUG:recovery:boot_nand=run nandargs addmtd addtty addmisc; nand read ${loadaddr} kernel; bootm ${loadaddr}
+DEBUG:recovery:boot_nand_backup=run nandargs addmtd addtty addmisc; nand read ${loadaddr} kernel-backup; bootm ${loadaddr}
+DEBUG:recovery:bootcmd=run boot_nand
+DEBUG:recovery:splashimage=0x180000
+DEBUG:recovery:ethact=FEC
+DEBUG:recovery:sn=14-52-005-532
+DEBUG:recovery:pn=6500-1400-2001
+DEBUG:recovery:software_compatibility=0
+DEBUG:recovery:manufacture_date=2015/01
+DEBUG:recovery:ethaddr=00:0F:11:03:F5:83
+DEBUG:recovery:addmisc=setenv bootargs ${bootargs} mem=${mem} lpj=999424
+DEBUG:recovery:gatewayip=192.168.2.254
+DEBUG:recovery:netmask=255.255.255.0
+DEBUG:recovery:ipaddr=192.168.2.25
+DEBUG:recovery:dnsip=195.121.1.34
+DEBUG:recovery:
+DEBUG:recovery:Environment size: 1108/131068 bytes
+DEBUG:recovery:U-Boot>
+INFO:recovery:Received valid IP address, netmask and gateway using DHCP.
+INFO:recovery:Loading kernel into memory from server. Should not take more than 60 seconds ...
+DEBUG:recovery: setenv serverip 192.168.2.4
+U-Boot>
+DEBUG:recovery: setenv bootargs root=/dev/nfs rw nfsroot=${serverip}:/srv/nfs/toon,nfsvers=3,nolock,tcp console=ttymxc0,115200 loglevel=8 mtdparts=mxc_nand:512K@0x00100000(u-boot-env)ro,1536K(splash-image),3M(kernel),3M(kernel-backup),119M(rootfs) ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}:toon::off panic=0
+U-Boot>
+DEBUG:recovery:nfs 0xa1000000 /srv/nfs/toon/boot/uImage-nfs;bootm
+DEBUG:recovery:Using FEC device
+DEBUG:recovery:File transfer via NFS from server 192.168.2.4; our IP address is 192.168.2.25
+DEBUG:recovery:Filename '/srv/nfs/toon/boot/uImage-nfs'.
+DEBUG:recovery:Load address: 0xa1000000
+DEBUG:recovery:Loading: #################################################################
+DEBUG:recovery:#################################################################
+DEBUG:recovery:#################################################################
+DEBUG:recovery:#################################################################
+DEBUG:recovery:#################################################################
+DEBUG:recovery:#################################################################
+DEBUG:recovery:#################################################################
+DEBUG:recovery:##################################
+DEBUG:recovery:done
+INFO:recovery:Kernel loaded into memory. Now booting from server...
+INFO:recovery:Waiting for boot up
+INFO:recovery:Toon booting into recovery shell. For now, just start your favourite serial terminal
+
+
+Started  Putty, selected serial and /dev/ttyS0 showed up.
+Speed 115200
+Changed the font (on the left > Window > Fonts ) to a bigger font to get something readable on the screen and connected.
+
+Pressed enter and saw the next menu of which I used all options in the order 1,2,3,4
+
+Welcome to the Toon recovery environment.
+--> Your Toon has hostname: eneco-001-xxxxxx
+--> We have a VPN config file in the backup location
+=========================================
+1) Backup Toon VPN config
+2) Format Toon filesystem
+3) Recover Toon filesystem
+4) Restore Toon hostname and VPN config from backup
+9) Reboot Toon
+0) Drop to shell
+=========================================
+Choose an option:
+
+After this I had root access over ssh again.
+
+Many thanks to everybody mentioned in the README.md who contributed to get this done.

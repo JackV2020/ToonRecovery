@@ -1,5 +1,9 @@
 # ToonRecovery
 
+I followed https://github.com/IgorYbema/ToonRecovery and used a Raspberry Pi 4 with bullseye and things were a little bit different.
+
+This is why I forked and created "Pi 4 bullseye recovery Toon 1.txt" which describes the whole process which starts with downloading and installing bullseye on my Raspberry Pi 4.
+
 ## What it does
 This application boots a recovery environment for your Toon 1 from a Raspberry Pi or another device with a JTAG debugger attached.
 
