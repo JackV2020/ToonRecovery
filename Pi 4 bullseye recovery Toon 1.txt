@@ -5,85 +5,103 @@ To recover I followed the instructions at https://github.com/IgorYbema/ToonRecov
 
 I used a Raspberry Pi 4 and bullseye which is probably the cause why I had to do some things different than in the instructions.
 
-Below I describe exactly what I did from downloading bullseye until the successful recovery.
+Below I describe what I did from downloading bullseye until the successful recovery.
 
 
-I visited https://www.raspberrypi.com/software/ where you can download software.
+Visit https://www.raspberrypi.com/software/ and download software.
 
-It is possible to download and use the "Raspberry Pi Imager" to create a uSD card with bullseye on it.
+Download and install the "Raspberry Pi Imager" and create a uSD card with 64 bit bullseye with full desktop on it.
 
-You can also download an image and install it manually.
-
-Anyway, I put bullseye on a 32 GB uSD card and from previous installations I knew I had to make some changes to config.txt before putting it in my Pi.
+From previous installations for my Pi 4 I know I have to make some changes to config.txt before putting it in my Pi.
 
 ( Detailed info on config.txt is available on https://www.raspberrypi.com/documentation/ )
 
-/boot/config.txt :
-to have output on HDMI I have to
-    change dtoverlay=vc4-kms-v3d -- > dtoverlay=vc4-fkms-v3d
-to force hdmi screen for vnc
+When working on Windows I think you have an extra drive with config.txt somewhere in the top folder.
+On Linux I have config.txt on /media/jack/bootfs/
+
+On Windows I would use notepad as editor. On my Linux laptop I use geany to make changes to config.txt :
+
+to have output on HDMI I have to change by adding an 'f' :
+    dtoverlay=vc4-kms-v3d -- > dtoverlay=vc4-fkms-v3d
+to force hdmi screen for vnc I need :
     hdmi_force_hotplug=1
 to force the mode I need :
     hdmi_group=2
     hdmi_mode=69
 
-After this I put put the uSD card in the Pi, connected my screen, keyboard, mouse Ethernet and booted.
-I followed the basic startup settings concerning country, language, keyboard, skipped WiFi, let it update and rebooted.
+Save the file, put the uSD card in the Pi, connect screen, keyboard, mouse Ethernet and boot.
+Follow the basic startup settings concerning country, language, keyboard, skipped WiFi, let it update and reboot.
 
-Screen was scrolling like every time I do this so
+When the screen is scrolling (like every time I do this)
 Start > Preferences > Screen Configuration > Configure > Screens > Resolution > 1920x1080
 
 A requirement is that you enable the serial port without console login possibility.
-You need to configure that in raspi-config.
-Something I like but what you do not need to use is vnc.
-You do not need to use vnc but I like it because I can make screenshots, copy paste text etc.
 
-sudo raspi-config
-    vnc display resolution for headless use 1920x1080
-    Enabled vnc
-    Enabled serial without console output
+Start a terminal window by clicking on the black icon in the top of the screen.
 
-Check if I can see the serial port :
+    sudo raspi-config
+        3 Interface Options
+            I6 Serial Port
+                No
+                Yes
+                Ok
+
+Since I like to use VNC (you might skip these 2)
+
+    3 Interface Options
+        I3 VNC
+            Yes
+            Ok
+and
+    2 Display Options
+        D5 VNC Resolution
+            1920x1080
+
+Check if I can see the serial port /dev/ttyS0:
     ls -l /dev/ttyS0
     crw-rw---- 1 root dialout 4, 64 Aug 26 13:22 /dev/ttyS0
 
-I use a Pi which I normally use for Nextcloud, Domoticz and other things and I decided to give it the same address and name.
+You might skip to where we install putty but I like to have fixed names, addresses and use vnc.
 
-I put a static IP in /etc/dhcpcd.conf :
-    interface eth0
-    static ip_address=192.168.2.4/24
-    static routers=192.168.2.254
-    static domain_name_servers=192.168.2.254
+I put a static IP in /etc/dhcpcd.conf, I use geany as editor like I do on my laptop :
+    sudo geany /etc/dhcpcd.conf &
+        interface eth0
+        static ip_address=192.168.2.4/24
+        static routers=192.168.2.254
+        static domain_name_servers=192.168.2.254
 
 changed /etc/hostname :
-    pi41.home
+    sudo geany /etc/hostname
+        pi41.home
 
-sudo geany /etc/hosts :
-    127.0.0.1    localhost
-    ::1        localhost ip6-localhost ip6-loopback
-    ff02::1        ip6-allnodes
-    ff02::2        ip6-allrouters
+    sudo geany /etc/hosts :
+        127.0.0.1    localhost
+        ::1        localhost ip6-localhost ip6-loopback
+        ff02::1        ip6-allnodes
+        ff02::2        ip6-allrouters
 
-    127.0.1.1    pi41
-    192.168.2.4     pi41.home
+        127.0.1.1    pi41
+        192.168.2.4     pi41.home
 
+Shut down Pi
 
-I shut down Pi, removed screen, keyboard and mouse, booted and connected by vnc.
+    init 0
 
+Remove screen, keyboard and mouse, boot and connect by vnc.
 
-Later we need a terminal emulator which can use a serial connection like /dev/ttyS0 so I installed putty :
+Later we need a terminal emulator which can use /dev/ttyS0 so install putty :
 
 pi@pi41:~ $ sudo apt install putty -y
 
-Started putty and it "sees" /dev/ttyS0 when I select serial.
-Closed putty.
+Start putty, select serial and see /dev/ttyS0.
+Close putty for now.
 
-Now following the Recovery repository :
+Put NFS requirements in place :
 
 pi@pi41:~ $ mkdir -p /srv/nfs
 mkdir: cannot create directory '/srv/nfs': Permission denied
 
-Of course not so :
+Whoops so :
 pi@pi41:~ $ sudo -i
 
 root@pi41:~# mkdir -p /srv/nfs
@@ -93,28 +111,29 @@ root@pi41:~# curl -Nks "http://qutility.nl/toon-recovery-nfs-server-image.tar.gz
 root@pi41:~# cat /proc/fs/nfsd/versions
 No output because there is no nfs server
 
-root@pi41:~#  apt install nfs-kernel-server
+root@pi41:~# apt install nfs-kernel-server
 
-root@pi41:~#  cat /proc/fs/nfsd/versions
+root@pi41:~# cat /proc/fs/nfsd/versions
 -2 +3 +4 +4.1 +4.2
 
-No version 2 support so I edit  /etc/default/nfs-kernel-server
-change :
+No version 2 support so 
+root@pi41:~# geany /etc/default/nfs-kernel-server
+Change :
     RPCNFSDCOUNT=8
 to :
     RPCNFSDCOUNT="8 -V 2"
-root@pi41:~#  systemctl restart nfs-kernel-server.service
-root@pi41:~#  cat /proc/fs/nfsd/versions
+root@pi41:~# systemctl restart nfs-kernel-server.service
+root@pi41:~# cat /proc/fs/nfsd/versions
 +2 +3 +4 +4.1 +4.2
 
 NFS version 2 is there.
 
-I added the next line to the end of /etc/exports
+root@pi41:~# geany /etc/exports
+Add the next line to the end of the file :
 /srv/nfs *(rw,no_subtree_check,async,no_root_squash)
 
 Just to make sure to have it activated :
 root@pi41:~# systemctl restart nfs-kernel-server.service
-No errors.
 
 One of the requirements is python 2.7
 
@@ -122,7 +141,7 @@ Check python version :
 root@pi41:~# python -V
 Python 3.9.2
 
-I could not find python2.7 on my Pi so I installed it :
+I could not find python2.7 on my Pi and found how to install it :
 root@pi41:~# apt install python
 root@pi41:~# curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
 root@pi41:~# python2 get-pip.py
@@ -135,15 +154,17 @@ root@pi41:~#
 
 ( I checked the same for the account pi and that gives the same so the default python version is 2.7 now. )
 
-We are going to use sudo to run the tool so the next I did with the pi account :
+We are going to use sudo to run the tool so continue with the pi account :
+root@pi41:~# exit
 pi@pi41:~ $ git clone --recursive git://git.code.sf.net/p/openocd/code openocd
 pi@pi41:~ $ cd openocd
 pi@pi41:~ $ sudo apt install make libtool libtool-bin pkg-config autoconf automake texinfo libusb-1.0 libusb-dev
-I got an error because it was not possible to install libusb-1.0
-So without libusb-1.0
+There is an error because it is not possible to install libusb-1.0
+So first install without libusb-1.0
 pi@pi41:~ $ sudo apt install make libtool libtool-bin pkg-config autoconf automake texinfo libusb-dev
 
-See what we can do about libusb-1.0
+And see what we can do about libusb-1.0 by checking what options have a naming starting with libusb-
+
 pi@pi41:~ sudo apt-cache search libusb | grep ^libusb-
 libusb-0.1-4 - userspace USB programming library
 libusb-dev - userspace USB programming library development files
@@ -157,14 +178,27 @@ libusb-libusb-perl - Perl interface to the libusb-1.0 API
 libusb-ocaml - OCaml bindings to libusb-1.0 (runtime)
 libusb-ocaml-dev - OCaml bindings to libusb-1.0
 
-I saw 2 versions and the version libusb-1.0-0 looks the most like libusb-1.0
+The option libusb-1.0-0 looks the most like libusb-1.0
 
 So
 
 pi@pi41:~ sudo apt-get install libusb-1.0-0
-and received a message : libusb-1.0-0 is already the newest version (2:1.0.24-3).
+and I received a message : libusb-1.0-0 is already the newest version (2:1.0.24-3).
 
 Now 2 actions which require some coffee or thee :
+
+First action : copy the next block :
+
+{
+./bootstrap &&\
+./configure --enable-sysfsgpio\
+     --enable-bcm2835gpio \
+     --prefix=/usr\
+&&\
+make -j4
+} 2>&1 | tee openocd_build.log
+
+and paste it into the terminal window like :
 
 pi@pi41:~ $ {
 ./bootstrap &&\
@@ -174,14 +208,17 @@ pi@pi41:~ $ {
 &&\
 make -j4
 } 2>&1 | tee openocd_build.log
-wait...wait...
 
+Press enter and wait...wait...or have a coffee
+
+After that
 pi@pi41:~ $ sudo make install
 wait...wait...
 
 Next requirement is python-serial
 pi@pi41:~ $ sudo apt install python-serial
-I got a message explaining that it is not available.
+ends with :
+E: Package 'python-serial' has no installation candidate
 
 Google how to install python-serial and I found the next solution
 pi@pi41:~ $ sudo pip2 install pyserial
@@ -192,10 +229,31 @@ pi@pi41:~ $ sudo pip2 install pyserial
 pi@pi41:~ git clone https://github.com/ToonSoftwareCollective/ToonRecovery.git
 pi@pi41:~ cd ToonRecovery
 
-I always like to look around  so
 pi@pi41:~ ls
 
-After some looking around I shut down the pi and connected Toon 1 as described in the recovery repository.
+And see some files
+
+Get an overview of your pi pin layout :
+
+pi@pi41:~ pinout
+
+This is the layout you need when you open your Pi below.
+
+Shut down the pi and connected Toon 1 as described in the recovery repository.
+
+pi@pi41:~ init 0
+
+After opening your Pi position it so that you see the 2 rows with pins on the right and the power connection on the left side.
+Now the uSD card slot should be at the top. 
+The pins on the left row are numbered from top to bottom with odd numbers 1 to 39.
+The right row is numbered from top to bottom with even numbers so 2..40.
+
+Be carefull while opening your Toon 1. Follow instructions you can find on youtube.
+Position your opened Toon so that the push button is at the bottom side and you see 2 vertical rows of pins.
+The pins on the left row are numbered from top to bottom with odd numbers 1 to 13.
+The right row is numbered from top to bottom with even numbers so 2..14.
+
+Make the next 11 connections with female-female DuPont Jumper cables.
 
 Toon        Pi
 Pin#        Pin# (not GPIO but Pin#)
